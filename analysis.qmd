@@ -1,0 +1,88 @@
+---
+title: "Analyzing US Births"
+author: "Chloe"
+format: html
+---
+
+This heatmap shows mean births for each calendar date across the years in the dataset.
+
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+births_by_date <- read_excel("data/us_births_1994_2014.xlsx") |>
+  group_by(month, date_of_month) |>
+  summarize(mean_births = mean(births), .groups = "drop") |>
+  mutate(month = factor(month, levels = 1:12, labels = month.name))
+
+ggplot(births_by_date, aes(x = date_of_month, y = month, fill = mean_births)) +
+  geom_tile(color = "white", linewidth = 0.25) +
+  scale_x_continuous(breaks = 1:31, position = "bottom") +
+  scale_y_discrete(limits = rev(month.name)) +
+  scale_fill_gradient(low = "#f7fbff", high = "#08519c", name = "Mean births") +
+  labs(x = "Day of month", y = NULL) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
+This chart shows annual births as a percentage of the mean annual births across all years.
+
+```{r}
+births_by_year <- read_excel("data/us_births_1994_2014.xlsx") |>
+  group_by(year) |>
+  summarize(annual_births = sum(births), .groups = "drop") |>
+  mutate(
+    pct_of_baseline = annual_births / mean(annual_births) * 100,
+    dec25_weekday = factor(
+      weekdays(as.Date(paste(year, "12-25", sep = "-"))),
+      levels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+    )
+  )
+
+ggplot(births_by_year, aes(x = year, y = pct_of_baseline)) +
+  geom_line() +
+  geom_point(aes(color = dec25_weekday)) +
+  labs(x = "Year", y = "Percent of baseline", color = "Weekday on Dec 25")
+```
+
+This chart shows mean daily birth-count residuals by calendar date. Each day's births
+are compared with that year's average daily births, then averaged across years.
+
+```{r}
+calendar_resid <- read_excel("data/us_births_1994_2014.xlsx") |>
+  group_by(year) |>
+  mutate(pct_resid = (births / mean(births) - 1) * 100) |>
+  ungroup() |>
+  group_by(month, date_of_month) |>
+  summarize(mean_pct_resid = mean(pct_resid), .groups = "drop") |>
+  mutate(calendar_date = as.Date(sprintf("2000-%02d-%02d", month, date_of_month))) |>
+  arrange(calendar_date)
+
+holiday_labels <- tibble(
+  calendar_date = as.Date(c("2000-12-25", "2000-01-01", "2000-12-24", "2000-07-04")),
+  label = c("Christmas Day", "New Year's Day", "Christmas Eve", "July 4"),
+  label_date = as.Date(c("2000-12-19", "2000-02-01", "2000-12-10", "2000-07-10")),
+  label_y = c(-47, -36, -32, -25)
+) |>
+  left_join(calendar_resid, by = "calendar_date")
+
+ggplot(calendar_resid, aes(x = calendar_date, y = mean_pct_resid)) +
+  geom_hline(yintercept = 0, color = "gray50", linetype = "dashed") +
+  geom_line() +
+  geom_segment(
+    data = holiday_labels,
+    aes(x = calendar_date, y = mean_pct_resid, xend = label_date, yend = label_y),
+    inherit.aes = FALSE,
+    color = "gray40"
+  ) +
+  geom_label(
+    data = holiday_labels,
+    aes(x = label_date, y = label_y, label = label),
+    inherit.aes = FALSE,
+    size = 3
+  ) +
+  labs(x = "Calendar date", y = "Mean daily births residual (%)") +
+  coord_cartesian(ylim = c(-55, 15)) +
+  theme_minimal()
+```
